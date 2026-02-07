@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Live Crisis Map</title>
+  <meta charset="utf-8">
+
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <style>
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background: #0b1220;
+      color: white;
+      display: flex;
+    }
+
+    #map { width: 70%; height: 100vh; }
+    #panel {
+      width: 30%;
+      background: #111827;
+      padding: 20px;
+      overflow-y: auto;
+    }
+
+    textarea, input, button {
+      width: 100%;
+      margin-bottom: 10px;
+      padding: 8px;
+      border-radius: 6px;
+      border: none;
+    }
+
+    button {
+      background: #2563eb;
+      color: white;
+      cursor: pointer;
+    }
+
+    .score { font-size: 20px; font-weight: bold; margin: 10px 0; }
+    .red { color: #ef4444; }
+    .yellow { color: #facc15; }
+    .green { color: #22c55e; }
+
+    .card {
+      background: #1f2933;
+      padding: 12px;
+      border-radius: 10px;
+    }
+
+    img, video {
+      width: 100%;
+      border-radius: 8px;
+      margin-top: 8px;
+    }
+  </style>
+</head>
+
+<body>
+
+<div id="map"></div>
+
+<div id="panel">
+  <h2>Live Crisis Map</h2>
+
+  <textarea id="msg" placeholder="Elderly people trapped, urgent help needed"></textarea>
+  <input id="locationInput" placeholder="Location (e.g. KR Puram Bus Stop, Bangalore)">
+  <input type="file" id="imageInput" accept="image/*">
+  <input type="file" id="videoInput" accept="video/*">
+
+  <button onclick="addIncident()">Analyze & Plot</button>
+
+  <hr>
+  <h3>Incident Details</h3>
+  <div id="incident">Click a marker</div>
+</div>
+
+<script>
+  const map = L.map('map').setView([12.9716, 77.5946], 11);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+
+  function getUrgency(text) {
+    const red = ["urgent", "elderly", "injured", "trapped", "fire", "flood", "child"];
+    const yellow = ["help", "need", "stuck", "shortage"];
+    const green = ["food", "water", "power", "information"];
+
+    for (let w of red) if (text.includes(w)) return { level:"Critical", color:"red", score:92 };
+    for (let w of yellow) if (text.includes(w)) return { level:"Moderate", color:"yellow", score:58 };
+    for (let w of green) if (text.includes(w)) return { level:"Low", color:"green", score:25 };
+
+    return { level:"Moderate", color:"yellow", score:50 };
+  }
+
+  async function geocode(place) {
+    const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(place)}`;
+    const res = await fetch(url);
+    const data = await res.json();
+    if (!data.length) return null;
+    return [parseFloat(data[0].lat), parseFloat(data[0].lon)];
+  }
+
+  async function addIncident() {
+    const text = document.getElementById("msg").value.toLowerCase();
+    const place = document.getElementById("locationInput").value.trim();
+
+    if (place.length === 0) {
+      alert("Please enter a location");
+      return;
+    }
+
+    const urgency = getUrgency(text);
+    const coords = await geocode(place);
+
+    if (!coords) {
+      alert("Location not found. Try adding city name.");
+      return;
+    }
+
+    const imgFile = document.getElementById("imageInput").files[0];
+    const vidFile = document.getElementById("videoInput").files[0];
+
+    const marker = L.circleMarker(coords, {
+      radius: 10,
+      color: urgency.color,
+      fillColor: urgency.color,
+      fillOpacity: 0.9
+    }).addTo(map);
+
+    let popup = `<b>${urgency.level}</b><br>${text}`;
+    if (imgFile) popup += `<br><img src="${URL.createObjectURL(imgFile)}">`;
+    if (vidFile) popup += `<br><video src="${URL.createObjectURL(vidFile)}" controls></video>`;
+
+    marker.bindPopup(popup);
+    marker.on("click", () => showDetails(text, urgency, imgFile, vidFile));
+
+    map.setView(coords, 15);
+    showDetails(text, urgency, imgFile, vidFile);
+  }
+
+  function showDetails(text, urgency, imgFile, vidFile) {
+    let html = `
+      <div class="card">
+        <b>${text}</b>
+        <div class="score ${urgency.color}">
+          Urgency rated – ${urgency.score}
+        </div>
+        <ul>
+          <li>Keyword-based urgency detection</li>
+          <li>Exact location resolved via geocoding</li>
+          <li>Citizen media attached</li>
+        </ul>
+    `;
+
+    if (imgFile) html += `<img src="${URL.createObjectURL(imgFile)}">`;
+    if (vidFile) html += `<video src="${URL.createObjectURL(vidFile)}" controls></video>`;
+
+    html += `</div>`;
+    document.getElementById("incident").innerHTML = html;
+  }
+</script>
+
+</body>
+</html>
